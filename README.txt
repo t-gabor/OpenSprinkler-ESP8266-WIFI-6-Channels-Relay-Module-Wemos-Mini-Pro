@@ -10,6 +10,23 @@ https://openthings.freshdesk.com/support/solutions/articles/5000165132-how-to-co
 For OSPi/OSBO or other Linux-based OpenSprinkler:
 https://openthings.freshdesk.com/support/solutions/articles/5000631599-installing-and-updating-the-unified-firmware
 
+--------------------------------------------
+
+This modification with respect to the original is capable of controlling the relays included in the board
+
+Model: ESP8266-WIFI-4-Channels-Relay-Module-AC-DC-ESP-12F-Development-Board
+
+Probably the cheapest board on which you will be able to mount OpenSprinkler
+
+I have tested an SSD1306 oled screen connected to the pins of the board and it works correctly
+
+I haven't tested with buttons, sensors and other components. 
+
+Suggestions are welcome
+
+Credits: Thanks to the forum user Tobasco
+https://opensprinkler.com/forums/topic/change-firmware-to-control-stations-directly-via-gpio-pins-relays/
+
 ============================================
 Questions and comments:
 http://www.opensprinkler.com
