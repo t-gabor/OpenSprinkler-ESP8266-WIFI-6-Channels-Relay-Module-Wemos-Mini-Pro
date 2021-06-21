@@ -19,6 +19,11 @@ Model: ESP8266-WIFI-4-Channels-Relay-Module-AC-DC-ESP-12F-Development-Board
 Probably the cheapest board on which you will be able to mount OpenSprinkler
 
 I have tested an SSD1306 oled screen connected to the pins of the board and it works correctly
+  
+  3,3v  -> vcc
+  g     -> gnd
+  gpio5 -> scl
+  gpio4 -> sda
 
 I haven't tested with buttons, sensors and other components. 
 
