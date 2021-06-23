@@ -337,9 +337,9 @@ enum {
 	// pins on PCA9555A IO expander have pin numbers IOEXP_PIN+i
 	#define V1_IO_CONFIG         0x1F00 // config bits
 	#define V1_IO_OUTPUT         0x1F00 // output bits
-	#define V1_PIN_BUTTON_1      IOEXP_PIN+10 // button 1
-	#define V1_PIN_BUTTON_2      IOEXP_PIN+11 // button 2
-	#define V1_PIN_BUTTON_3      IOEXP_PIN+12 // button 3
+	#define V1_PIN_BUTTON_1      2 // button 1
+	#define V1_PIN_BUTTON_2      15 // button 2
+	#define V1_PIN_BUTTON_3      0 // button 3
 	#define V1_PIN_RFRX          14
 	#define V1_PIN_RFTX          16
 	#define V1_PIN_IOEXP_INT     12
