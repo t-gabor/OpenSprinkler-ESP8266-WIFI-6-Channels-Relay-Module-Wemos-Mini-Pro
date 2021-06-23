@@ -172,7 +172,7 @@ void ui_state_machine() {
 				if (digitalReadExt(PIN_BUTTON_3)==0) { // if B3 is pressed while holding B1, run a short test (internal test)
 					if(!ui_confirm(PSTR("Start 2s test?"))) {ui_state = UI_STATE_DEFAULT; break;}
 					manual_start_program(255, 0);
-				} else if (digitalReadExt(PIN_BUTTON_2)==0) { // if B2 is pressed while holding B1, display gateway IP
+				} else if (digitalReadExt(PIN_BUTTON_2)==1) { // if B2 is pressed while holding B1, display gateway IP
 					os.lcd.clear(0, 1);
 					os.lcd.setCursor(0, 0);
 					#if defined(ESP8266)
@@ -240,7 +240,7 @@ void ui_state_machine() {
 					os.lcd_print_pgm(PSTR("(lupt) cause:"));
 					os.lcd.print(os.last_reboot_cause);
 					ui_state = UI_STATE_DISP_IP;							
-				} else if(digitalReadExt(PIN_BUTTON_2)==0) {	// if B2 is pressed while holding B3, reset to AP and reboot
+				} else if(digitalReadExt(PIN_BUTTON_2)==1) {	// if B2 is pressed while holding B3, reset to AP and reboot
 					#if defined(ESP8266)
 					if(!ui_confirm(PSTR("Reset to AP?"))) {ui_state = UI_STATE_DEFAULT; break;}
 					os.reset_to_ap();
