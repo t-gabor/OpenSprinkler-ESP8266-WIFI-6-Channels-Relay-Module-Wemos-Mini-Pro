@@ -929,7 +929,7 @@ void OpenSprinkler::begin() {
 	pinMode(PIN_BUTTON_3, INPUT_PULLUP);
 	
 	// detect and check RTC type
-	RTC.detect();
+	/*RTC.detect();*/
 
 #else
 	DEBUG_PRINTLN(get_runtime_path());

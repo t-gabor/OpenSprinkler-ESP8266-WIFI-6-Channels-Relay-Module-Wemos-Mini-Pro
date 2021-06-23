@@ -307,9 +307,9 @@ void do_setup() {
 
 	pd.init();						// ProgramData init
 
-	setSyncInterval(RTC_SYNC_INTERVAL);  // RTC sync interval
+	/*setSyncInterval(RTC_SYNC_INTERVAL);*/  // RTC sync interval
 	// if rtc exists, sets it as time sync source
-	setSyncProvider(RTC.get);
+	/*setSyncProvider(RTC.get);*/
 	os.lcd_print_time(os.now_tz());  // display time to LCD
 	os.powerup_lasttime = os.now_tz();
 	
@@ -1776,8 +1776,8 @@ void perform_ntp_sync() {
 		}
 		if (t>0) {
 			setTime(t);
-			RTC.set(t);
-			DEBUG_PRINTLN(RTC.get());
+			/*RTC.set(t);*/
+			/*DEBUG_PRINTLN(RTC.get());*/
 		}
 	}
 #else
