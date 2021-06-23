@@ -2385,24 +2385,36 @@ byte OpenSprinkler::button_read_busy(byte pin_butt, byte waitmode, byte butt, by
 
 	int hold_time = 0;
 
-	if (waitmode==BUTTON_WAIT_NONE || (waitmode == BUTTON_WAIT_HOLD && is_holding)) {
-		if (digitalReadExt(pin_butt) != 0) return BUTTON_NONE;
-		return butt | (is_holding ? BUTTON_FLAG_HOLD : 0);
-	}
-
-	while (digitalReadExt(pin_butt) == 0 &&
-				 (waitmode == BUTTON_WAIT_RELEASE || (waitmode == BUTTON_WAIT_HOLD && hold_time<BUTTON_HOLD_MS))) {
-		delay_nicely(BUTTON_DELAY_MS);
-		hold_time += BUTTON_DELAY_MS;
-	}
+  if (pin_butt==PIN_BUTTON_2) {
+    if (waitmode==BUTTON_WAIT_NONE || (waitmode == BUTTON_WAIT_HOLD && is_holding)) {
+      if (digitalReadExt(pin_butt) != 1) return BUTTON_NONE;
+      return butt | (is_holding ? BUTTON_FLAG_HOLD : 0);
+    }
+  } else {
+    if (waitmode==BUTTON_WAIT_NONE || (waitmode == BUTTON_WAIT_HOLD && is_holding)) {
+      if (digitalReadExt(pin_butt) != 0) return BUTTON_NONE;
+      return butt | (is_holding ? BUTTON_FLAG_HOLD : 0);
+    }    
+  }
+  if (pin_butt==PIN_BUTTON_2) {  
+	  while (digitalReadExt(pin_butt) == 1 &&
+	  			 (waitmode == BUTTON_WAIT_RELEASE || (waitmode == BUTTON_WAIT_HOLD && hold_time<BUTTON_HOLD_MS))) {
+	  	delay_nicely(BUTTON_DELAY_MS);
+	  	hold_time += BUTTON_DELAY_MS;
+	  }
+  } else {
+    while (digitalReadExt(pin_butt) == 0 &&
+           (waitmode == BUTTON_WAIT_RELEASE || (waitmode == BUTTON_WAIT_HOLD && hold_time<BUTTON_HOLD_MS))) {
+      delay_nicely(BUTTON_DELAY_MS);
+      hold_time += BUTTON_DELAY_MS;      
+	  }
+  }
 	if (is_holding || hold_time >= BUTTON_HOLD_MS)
 		butt |= BUTTON_FLAG_HOLD;
 	return butt;
-
 }
-
 /** read button and returns button value 'OR'ed with flag bits */
-byte OpenSprinkler::button_read(byte waitmode)
+byte OpenSprinkler::button_read(byte waitmode) 
 {
 	static byte old = BUTTON_NONE;
 	byte curr = BUTTON_NONE;
@@ -2412,7 +2424,7 @@ byte OpenSprinkler::button_read(byte waitmode)
 
 	if (digitalReadExt(PIN_BUTTON_1) == 0) {
 		curr = button_read_busy(PIN_BUTTON_1, waitmode, BUTTON_1, is_holding);
-	} else if (digitalReadExt(PIN_BUTTON_2) == 0) {
+	} else if (digitalReadExt(PIN_BUTTON_2) == 1) {
 		curr = button_read_busy(PIN_BUTTON_2, waitmode, BUTTON_2, is_holding);
 	} else if (digitalReadExt(PIN_BUTTON_3) == 0) {
 		curr = button_read_busy(PIN_BUTTON_3, waitmode, BUTTON_3, is_holding);
