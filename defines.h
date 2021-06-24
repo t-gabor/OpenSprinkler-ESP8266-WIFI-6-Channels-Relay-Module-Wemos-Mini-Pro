@@ -346,8 +346,8 @@ enum {
 	#define V1_PIN_BOOST         IOEXP_PIN+13
 	#define V1_PIN_BOOST_EN      IOEXP_PIN+14
 	#define V1_PIN_LATCH_COM     IOEXP_PIN+15
-	#define V1_PIN_SENSOR1       IOEXP_PIN+8 // sensor 1
-	#define V1_PIN_SENSOR2       IOEXP_PIN+9 // sensor 2
+	#define V1_PIN_SENSOR1       1 // sensor 1
+	#define V1_PIN_SENSOR2       3 // sensor 2
 
 	/* OS30 revision 2 pin defines */
 	// pins on PCA9555A IO expander have pin numbers IOEXP_PIN+i
