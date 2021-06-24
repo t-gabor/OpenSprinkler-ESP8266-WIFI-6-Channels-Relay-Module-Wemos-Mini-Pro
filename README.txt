@@ -18,14 +18,19 @@ Model: ESP8266-WIFI-4-Channels-Relay-Module-AC-DC-ESP-12F-Development-Board
 
 Probably the cheapest board on which you will be able to mount OpenSprinkler
 
+The lines referring to the RTC module have been commented, since they produced time imbalances by not having said module
+
 I have tested an SSD1306 oled screen connected to the pins of the board and it works correctly
   
-  3,3v  -> vcc
-  g     -> gnd
-  gpio5 -> scl
-  gpio4 -> sda
+  3,3v   -> vcc
+  g      -> gnd
+  gpio5  -> scl
+  gpio4  -> sda
+  gpio2  ___.-.___ g                 b1 (button 1) "INPUT_PULLUP"
+  gpio15 ___.-.___ 3,3v              b2 (button 2) "INPUT_PULLDOWN"
+  gpio0  ___.-.___ g                 b3 (button 3) "INPUT_PULLUP"
 
-I haven't tested with buttons, sensors and other components. 
+I haven't tested with sensors and other components. 
 
 Suggestions are welcome
 

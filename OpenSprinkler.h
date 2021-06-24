@@ -36,7 +36,7 @@
 	#include <Wire.h>
 	#include <SPI.h>
 	#include <UIPEthernet.h>
-	#include "I2CRTC.h"
+	/*#include "I2CRTC.h"*/
 
 	#if defined(ESP8266)
 		#include <FS.h>
