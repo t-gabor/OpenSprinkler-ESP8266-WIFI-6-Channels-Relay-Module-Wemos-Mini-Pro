@@ -1434,7 +1434,7 @@ void server_change_options()
 		reset_all_stations_immediate();
 #if defined(ARDUINO)
 		setTime(t);
-		/*RTC.set(t);*/
+		RTC.set(t);
 #endif
 	}
 	if (err)	handle_return(HTML_DATA_OUTOFBOUND);
