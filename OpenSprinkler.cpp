@@ -75,8 +75,8 @@ extern char ether_buffer[];
 	byte OpenSprinkler::state = OS_STATE_INITIAL;
 	byte OpenSprinkler::prev_station_bits[MAX_NUM_BOARDS];
 	IOEXP* OpenSprinkler::expanders[MAX_NUM_BOARDS/2];
-	IOEXP* OpenSprinkler::mainio;
-	IOEXP* OpenSprinkler::drio;
+	IOEXP* OpenSprinkler::mainio; // main controller IO expander object
+	IOEXP* OpenSprinkler::drio; // driver board IO expander object
 	RCSwitch OpenSprinkler::rfswitch;
 
 	String OpenSprinkler::wifi_ssid="";
@@ -470,14 +470,13 @@ byte OpenSprinkler::start_network() {
 	lcd_print_line_clear_pgm(PSTR("Starting..."), 1);
 	uint16_t httpport = (uint16_t)(iopts[IOPT_HTTPPORT_1]<<8) + (uint16_t)iopts[IOPT_HTTPPORT_0];
 	if(m_server)	{ delete m_server; m_server = NULL; }
-	if(udp) { delete udp; udp = NULL; }
 	
 	if (start_ether()) {
 		m_server = new EthernetServer(httpport);
 		m_server->begin();
 
-		udp = new EthernetUDP();
-		udp->begin((httpport==8000) ? 8888 : 8000); // start udp on a different port than httpport
+		//udp = new EthernetUDP();
+		//udp->begin((httpport==8000) ? 8888 : 8000); // start udp on a different port than httpport
 
 #if defined(ESP8266)
 		// turn off WiFi when ether is active
@@ -497,8 +496,8 @@ byte OpenSprinkler::start_network() {
 			wifi_server = new ESP8266WebServer(httpport);
 		}
 
-		udp = new WiFiUDP();
-		udp->begin((httpport==8000) ? 8888 : 8000); // start udp on a different port than httpport
+		//udp = new WiFiUDP();
+		//udp->begin((httpport==8000) ? 8888 : 8000); // start udp on a different port than httpport
 
 		return 1;
 #endif
@@ -513,12 +512,8 @@ byte OpenSprinkler::start_ether() {
 	if(hw_rev<2) return 0;	// ethernet capability is only available after hw_rev 2
 #endif	
 	Ethernet.init(PIN_ETHER_CS);	// make sure to call this before any Ethernet calls
+	if(Ethernet.hardwareStatus()==EthernetNoHardware) return 0;
 	load_hardware_mac((uint8_t*)tmp_buffer, true);
-	// detect if Enc28J60 exists
-	Enc28J60Network::init((uint8_t*)tmp_buffer);
-	uint8_t erevid = Enc28J60Network::geterevid();
-	// a valid chip must have erevid > 0 and < 255
-	if(erevid==0 || erevid==255) return 0;
 
 	lcd_print_line_clear_pgm(PSTR("Start wired link"), 1);
 	
@@ -765,7 +760,8 @@ void OpenSprinkler::begin() {
 			PIN_RFTX = V2_PIN_RFTX;
 			PIN_BOOST = V2_PIN_BOOST;
 			PIN_BOOST_EN = V2_PIN_BOOST_EN;
-			PIN_LATCH_COM = V2_PIN_LATCH_COM;
+			PIN_LATCH_COMK = V2_PIN_LATCH_COMK; // os3.2latch uses H-bridge separate cathode and anode design
+			PIN_LATCH_COMA = V2_PIN_LATCH_COMA;
 			PIN_SENSOR1 = V2_PIN_SENSOR1;
 			PIN_SENSOR2 = V2_PIN_SENSOR2;
 		}		 
@@ -929,7 +925,7 @@ void OpenSprinkler::begin() {
 	pinMode(PIN_BUTTON_3, INPUT_PULLUP);
 	
 	// detect and check RTC type
-	/*RTC.detect();*/
+	RTC.detect();
 
 #else
 	DEBUG_PRINTLN(get_runtime_path());
@@ -966,6 +962,18 @@ void OpenSprinkler::latch_setallzonepins(byte value) {
 	}
 }
 
+void OpenSprinkler::latch_disable_alloutputs_v2() {
+	digitalWriteExt(PIN_LATCH_COMA, LOW);
+	digitalWriteExt(PIN_LATCH_COMK, LOW);
+	
+	// latch v2 has a pca9555 the lowest 8 bits of which control all h-bridge anode pins
+	drio->i2c_write(NXP_OUTPUT_REG, drio->i2c_read(NXP_OUTPUT_REG) & 0xFF00);
+	// latch v2 has a 74hc595 which controls all h-bridge cathode pins
+	drio->shift_out(V2_PIN_SRLAT, V2_PIN_SRCLK, V2_PIN_SRDAT, 0x00);
+	
+	// todo: handle expander
+}
+
 /** Set one zone (for LATCH controller)
  *	This function sets one specified zone pin to a specified value
  */
@@ -989,30 +997,72 @@ void OpenSprinkler::latch_setzonepin(byte sid, byte value) {
 	}
 }
 
+void OpenSprinkler::latch_setzoneoutput_v2(byte sid, byte A, byte K) {
+	if(A==HIGH && K==HIGH) return; // A and K must not be HIGH at the same time
+	
+	if(sid<8) { // on main controller
+		// v2 latch driver has one PCA9555, the lowest 8-bits of which control all anode pins
+		// and one 74HC595, which controls all cathod pins
+		uint16_t reg = drio->i2c_read(NXP_OUTPUT_REG);
+		if(A) reg |= (1<<sid); // lowest 8 bits of 9555 control output anodes
+		else reg &= (~(1<<sid));
+		drio->i2c_write(NXP_OUTPUT_REG, reg);
+		
+		drio->shift_out(V2_PIN_SRLAT, V2_PIN_SRCLK, V2_PIN_SRDAT, K ? (1<<sid) : 0);
+		
+	} else { // on expander
+		// todo: handle expander
+	}
+}
+
 /** LATCH open / close a station
  *
  */
 void OpenSprinkler::latch_open(byte sid) {
-	latch_boost();	// boost voltage
-	latch_setallzonepins(HIGH);				// set all switches to HIGH, including COM
-	latch_setzonepin(sid, LOW); // set the specified switch to LOW
-	delay(1); // delay 1 ms for all gates to stablize
-	digitalWriteExt(PIN_BOOST_EN, HIGH); // dump boosted voltage
-	delay(100);											// for 100ms
-	latch_setzonepin(sid, HIGH);				// set the specified switch back to HIGH
-	digitalWriteExt(PIN_BOOST_EN, LOW);  // disable boosted voltage
+	if(hw_rev==2) {
+		DEBUG_PRINTLN(F("latch_open_v2"));
+		latch_disable_alloutputs_v2(); // disable all output pins
+		latch_boost(); // generate boost voltage
+		digitalWriteExt(PIN_LATCH_COMA, HIGH); // enable COM+
+		latch_setzoneoutput_v2(sid, LOW, HIGH); // enable sid-
+		digitalWriteExt(PIN_BOOST_EN, HIGH); // enable output path
+		delay(150);
+		digitalWriteExt(PIN_BOOST_EN, LOW); // disabled output boosted voltage path
+		latch_disable_alloutputs_v2(); // disable all output pins		
+	} else {
+		latch_boost();	// boost voltage
+		latch_setallzonepins(HIGH);				// set all switches to HIGH, including COM
+		latch_setzonepin(sid, LOW); // set the specified switch to LOW
+		delay(1); // delay 1 ms for all gates to stablize
+		digitalWriteExt(PIN_BOOST_EN, HIGH); // dump boosted voltage
+		delay(100);											// for 100ms
+		latch_setzonepin(sid, HIGH);				// set the specified switch back to HIGH
+		digitalWriteExt(PIN_BOOST_EN, LOW);  // disable boosted voltage
+	}
 }
 
 void OpenSprinkler::latch_close(byte sid) {
-	latch_boost();	// boost voltage
-	latch_setallzonepins(LOW);				// set all switches to LOW, including COM
-	latch_setzonepin(sid, HIGH);// set the specified switch to HIGH
-	delay(1); // delay 1 ms for all gates to stablize
-	digitalWriteExt(PIN_BOOST_EN, HIGH); // dump boosted voltage
-	delay(100);											// for 100ms
-	latch_setzonepin(sid, LOW);			// set the specified switch back to LOW
-	digitalWriteExt(PIN_BOOST_EN, LOW);  // disable boosted voltage
-	latch_setallzonepins(HIGH);								// set all switches back to HIGH
+	if(hw_rev==2) {
+		DEBUG_PRINTLN(F("latch_close_v2"));	
+		latch_disable_alloutputs_v2(); // disable all output pins
+		latch_boost(); // generate boost voltage
+		latch_setzoneoutput_v2(sid, HIGH, LOW); // enable sid+
+		digitalWriteExt(PIN_LATCH_COMK, HIGH); // enable COM-
+		digitalWriteExt(PIN_BOOST_EN, HIGH); // enable output path
+		delay(150);
+		digitalWriteExt(PIN_BOOST_EN, LOW); // disable output boosted voltage path
+		latch_disable_alloutputs_v2(); // disable all output pins
+	} else {
+		latch_boost();	// boost voltage
+		latch_setallzonepins(LOW);				// set all switches to LOW, including COM
+		latch_setzonepin(sid, HIGH);// set the specified switch to HIGH
+		delay(1); // delay 1 ms for all gates to stablize
+		digitalWriteExt(PIN_BOOST_EN, HIGH); // dump boosted voltage
+		delay(100);											// for 100ms
+		latch_setzonepin(sid, LOW);			// set the specified switch back to LOW
+		digitalWriteExt(PIN_BOOST_EN, LOW);  // disable boosted voltage
+		latch_setallzonepins(HIGH);								// set all switches back to HIGH
+	}
 }
 
 /**
@@ -1038,122 +1088,109 @@ void OpenSprinkler::latch_apply_all_station_bits() {
 }
 #endif
 
-/** Desde aquí se elimina para dar paso a los pines GPIO de la placa ESP8266 WIFI 4 Channels Relay Module AC/DC ESP-12F Development Board que son los pines GPIO16 (D0)GPIO14 (D5)GPIO12 (D6)GPIO13 (D7)*/
 /** Apply all station bits
  * !!! This will activate/deactivate valves !!!
  */
-//void OpenSprinkler::apply_all_station_bits() {
-//
-//#if defined(ESP8266)
-//  if(hw_type==HW_TYPE_LATCH) {
-//    // if controller type is latching, the control mechanism is different
-//    // hence will be handled separately
-//    latch_apply_all_station_bits(); 
-//  } else {
-//    // Handle DC booster
-//    if(hw_type==HW_TYPE_DC && engage_booster) {
-//      // for DC controller: boost voltage and enable output path
-//      digitalWriteExt(PIN_BOOST_EN, LOW);  // disfable output path
-//      digitalWriteExt(PIN_BOOST, HIGH);    // enable boost converter
-//      delay_nicely((int)iopts[IOPT_BOOST_TIME]<<2); // wait for booster to charge
-//      digitalWriteExt(PIN_BOOST, LOW);     // disable boost converter
-//      digitalWriteExt(PIN_BOOST_EN, HIGH); // enable output path
-//      engage_booster = 0;
-//    }
-//
-//    // Handle driver board (on main controller)
-//    if(drio->type==IOEXP_TYPE_8574) {
-//      /* revision 0 uses PCF8574 with active low logic, so all bits must be flipped */
-//      drio->i2c_write(NXP_OUTPUT_REG, ~station_bits[0]);
-//    } else if(drio->type==IOEXP_TYPE_9555) {
-//      /* revision 1 uses PCA9555 with active high logic */
-//      uint16_t reg = drio->i2c_read(NXP_OUTPUT_REG);  // read current output reg value
-//      reg = (reg&0xFF00) | station_bits[0]; // output channels are the low 8-bit
-//      drio->i2c_write(NXP_OUTPUT_REG, reg); // write value to register
-//    }
-//      
-//    // Handle expansion boards
-//    for(int i=0;i<MAX_EXT_BOARDS/2;i++) {
-//      uint16_t data = station_bits[i*2+2];
-//      data = (data<<8) + station_bits[i*2+1];
-//      if(expanders[i]->type==IOEXP_TYPE_9555) {
-//        expanders[i]->i2c_write(NXP_OUTPUT_REG, data);
-//      } else {
-//        expanders[i]->i2c_write(NXP_OUTPUT_REG, ~data);
-//      }
-//    }
-//  }
-//    
-//  byte bid, s, sbits;  
-//#else
-//  digitalWrite(PIN_SR_LATCH, LOW);
-//  byte bid, s, sbits;
-//
-//  // Shift out all station bit values
-//  // from the highest bit to the lowest
-//  for(bid=0;bid<=MAX_EXT_BOARDS;bid++) {
-//    if (status.enabled)
-//      sbits = station_bits[MAX_EXT_BOARDS-bid];
-//    else
-//      sbits = 0;
-//
-//    for(s=0;s<8;s++) {
-//      digitalWrite(PIN_SR_CLOCK, LOW);
-//  #if defined(OSPI) // if OSPI, use dynamically assigned pin_sr_data
-//      digitalWrite(pin_sr_data, (sbits & ((byte)1<<(7-s))) ? HIGH : LOW );
-//  #else
-//      digitalWrite(PIN_SR_DATA, (sbits & ((byte)1<<(7-s))) ? HIGH : LOW );
-//  #endif
-//      digitalWrite(PIN_SR_CLOCK, HIGH);
-//    }
-//  }
-//
-//  #if defined(ARDUINO)
-//  if((hw_type==HW_TYPE_DC) && engage_booster) {
-//    // for DC controller: boost voltage
-//    digitalWrite(PIN_BOOST_EN, LOW);  // disable output path
-//    digitalWrite(PIN_BOOST, HIGH);    // enable boost converter
-//    delay_nicely((int)iopts[IOPT_BOOST_TIME]<<2); // wait for booster to charge
-//    digitalWrite(PIN_BOOST, LOW);     // disable boost converter
-//
-//    digitalWrite(PIN_BOOST_EN, HIGH); // enable output path
-//    digitalWrite(PIN_SR_LATCH, HIGH);
-//    engage_booster = 0;
-//  } else {
-//    digitalWrite(PIN_SR_LATCH, HIGH);
-//  }
-//  #else
-//  digitalWrite(PIN_SR_LATCH, HIGH);
-//  #endif
-//#endif
-//
-//
-//  if(iopts[IOPT_SPE_AUTO_REFRESH]) {
-//    // handle refresh of RF and remote stations
-//    // we refresh the station that's next in line
-//    static byte next_sid_to_refresh = MAX_NUM_STATIONS>>1;
-//    static byte lastnow = 0;
-//    byte _now = (now() & 0xFF);
-//    if (lastnow != _now) {  // perform this no more than once per second
-//      lastnow = _now;
-//      next_sid_to_refresh = (next_sid_to_refresh+1) % MAX_NUM_STATIONS;
-//      bid=next_sid_to_refresh>>3;
-//      s=next_sid_to_refresh&0x07;
-//      switch_special_station(next_sid_to_refresh, (station_bits[bid]>>s)&0x01);
-//    }
-//  }
-//}
-
-
-
-/**Modificación ESP8266 WIFI 4 Channels Relay Module AC/DC ESP-12F Development Board”.*/
-
 void OpenSprinkler::apply_all_station_bits() {
-  const uint8_t stationGPIO[] = {16, 14, 12, 13};
-  for (uint8_t i = 0; i < 4; i++) {
-    pinMode(stationGPIO[i], OUTPUT);
-    digitalWrite(stationGPIO[i], station_bits[0] & 1 << i ? HIGH : LOW);
-  }
+
+#if defined(ESP8266)
+	if(hw_type==HW_TYPE_LATCH) {
+		// if controller type is latching, the control mechanism is different
+		// hence will be handled separately
+		latch_apply_all_station_bits(); 
+	} else {
+		// Handle DC booster
+		if(hw_type==HW_TYPE_DC && engage_booster) {
+			// for DC controller: boost voltage and enable output path
+			digitalWriteExt(PIN_BOOST_EN, LOW);  // disfable output path
+			digitalWriteExt(PIN_BOOST, HIGH);		 // enable boost converter
+			delay((int)iopts[IOPT_BOOST_TIME]<<2);	// wait for booster to charge
+			digitalWriteExt(PIN_BOOST, LOW);		 // disable boost converter
+			digitalWriteExt(PIN_BOOST_EN, HIGH); // enable output path
+			engage_booster = 0;
+		}
+
+		// Handle driver board (on main controller)
+		if(drio->type==IOEXP_TYPE_8574) {
+			/* revision 0 uses PCF8574 with active low logic, so all bits must be flipped */
+			drio->i2c_write(NXP_OUTPUT_REG, ~station_bits[0]);
+		} else if(drio->type==IOEXP_TYPE_9555) {
+			/* revision 1 uses PCA9555 with active high logic */
+			uint16_t reg = drio->i2c_read(NXP_OUTPUT_REG);	// read current output reg value
+			reg = (reg&0xFF00) | station_bits[0]; // output channels are the low 8-bit
+			drio->i2c_write(NXP_OUTPUT_REG, reg); // write value to register
+		}
+			
+		// Handle expansion boards
+		for(int i=0;i<MAX_EXT_BOARDS/2;i++) {
+			uint16_t data = station_bits[i*2+2];
+			data = (data<<8) + station_bits[i*2+1];
+			if(expanders[i]->type==IOEXP_TYPE_9555) {
+				expanders[i]->i2c_write(NXP_OUTPUT_REG, data);
+			} else {
+				expanders[i]->i2c_write(NXP_OUTPUT_REG, ~data);
+			}
+		}
+	}
+		
+	byte bid, s, sbits;  
+#else
+	digitalWrite(PIN_SR_LATCH, LOW);
+	byte bid, s, sbits;
+
+	// Shift out all station bit values
+	// from the highest bit to the lowest
+	for(bid=0;bid<=MAX_EXT_BOARDS;bid++) {
+		if (status.enabled)
+			sbits = station_bits[MAX_EXT_BOARDS-bid];
+		else
+			sbits = 0;
+
+		for(s=0;s<8;s++) {
+			digitalWrite(PIN_SR_CLOCK, LOW);
+	#if defined(OSPI) // if OSPI, use dynamically assigned pin_sr_data
+			digitalWrite(pin_sr_data, (sbits & ((byte)1<<(7-s))) ? HIGH : LOW );
+	#else
+			digitalWrite(PIN_SR_DATA, (sbits & ((byte)1<<(7-s))) ? HIGH : LOW );
+	#endif
+			digitalWrite(PIN_SR_CLOCK, HIGH);
+		}
+	}
+
+	#if defined(ARDUINO)
+	if((hw_type==HW_TYPE_DC) && engage_booster) {
+		// for DC controller: boost voltage
+		digitalWrite(PIN_BOOST_EN, LOW);	// disable output path
+		digitalWrite(PIN_BOOST, HIGH);		// enable boost converter
+		delay((int)iopts[IOPT_BOOST_TIME]<<2);	// wait for booster to charge
+		digitalWrite(PIN_BOOST, LOW);			// disable boost converter
+
+		digitalWrite(PIN_BOOST_EN, HIGH); // enable output path
+		digitalWrite(PIN_SR_LATCH, HIGH);
+		engage_booster = 0;
+	} else {
+		digitalWrite(PIN_SR_LATCH, HIGH);
+	}
+	#else
+	digitalWrite(PIN_SR_LATCH, HIGH);
+	#endif
+#endif
+
+
+	if(iopts[IOPT_SPE_AUTO_REFRESH]) {
+		// handle refresh of RF and remote stations
+		// we refresh the station that's next in line
+		static byte next_sid_to_refresh = MAX_NUM_STATIONS>>1;
+		static byte lastnow = 0;
+		byte _now = (now() & 0xFF);
+		if (lastnow != _now) {	// perform this no more than once per second
+			lastnow = _now;
+			next_sid_to_refresh = (next_sid_to_refresh+1) % MAX_NUM_STATIONS;
+			bid=next_sid_to_refresh>>3;
+			s=next_sid_to_refresh&0x07;
+			switch_special_station(next_sid_to_refresh, (station_bits[bid]>>s)&0x01);
+		}
+	}
 }
 
 /** Read rain sensor status */
@@ -1292,7 +1329,7 @@ uint16_t OpenSprinkler::read_current() {
 		uint16_t sum = 0;
 		for(byte i=0;i<K;i++) {
 			sum += analogRead(PIN_CURR_SENSE);
-			delay_nicely(1);
+			delay(1);
 		}
 		return (uint16_t)((sum/K)*scale);
 	} else {
@@ -1798,89 +1835,89 @@ void OpenSprinkler::switch_httpstation(HTTPStationData *data, bool turnon) {
 	send_http_request(server, atoi(port), p, remote_http_callback);
 }
 
+/** Prepare factory reset */
+void OpenSprinkler::pre_factory_reset() {
+	// for ESP8266: wipe out flash
+	#if defined(ESP8266)
+	lcd_print_line_clear_pgm(PSTR("Wiping flash.."), 0);
+	lcd_print_line_clear_pgm(PSTR("Please Wait..."), 1);
+	SPIFFS.format();
+	#else
+	// remove 'done' file as an indicator for reset
+	// todo os2.3 and ospi: delete log files and/or wipe SD card
+	remove_file(DONE_FILENAME);
+	#endif
+}
+
+/** Factory reset */
+void OpenSprinkler::factory_reset() {
+#if defined(ARDUINO)
+	lcd_print_line_clear_pgm(PSTR("Factory reset"), 0);
+	lcd_print_line_clear_pgm(PSTR("Please Wait..."), 1);
+#else
+	DEBUG_PRINT("factory reset...");
+#endif		
+
+	// 1. reset integer options (by saving default values)
+	iopts_save();
+	// reset string options by first wiping the file clean then write default values
+	memset(tmp_buffer, 0, MAX_SOPTS_SIZE);
+	for(int i=0; i<NUM_SOPTS; i++) {
+		file_write_block(SOPTS_FILENAME, tmp_buffer, (ulong)MAX_SOPTS_SIZE*i, MAX_SOPTS_SIZE);
+	}
+	for(int i=0; i<NUM_SOPTS; i++) {
+		sopt_save(i, sopts[i]);
+	}
+	
+	// 2. write default station data
+	StationData *pdata=(StationData*)tmp_buffer;
+	pdata->name[0]='S';
+	pdata->name[3]=0;
+	pdata->name[4]=0;
+	StationAttrib at;
+	memset(&at, 0, sizeof(StationAttrib));
+	at.mas=1;
+	at.seq=1;
+	pdata->attrib=at; // mas:1 seq:1
+	pdata->type=STN_TYPE_STANDARD;
+	pdata->sped[0]='0';
+	pdata->sped[1]=0;
+	for(int i=0; i<MAX_NUM_STATIONS; i++) {
+		int sid=i+1;
+		if(i<99) {
+			pdata->name[1]='0'+(sid/10); // default station name
+			pdata->name[2]='0'+(sid%10);
+		} else {
+			pdata->name[1]='0'+(sid/100);
+			pdata->name[2]='0'+((sid%100)/10);
+			pdata->name[3]='0'+(sid%10);
+		}
+		file_write_block(STATIONS_FILENAME, pdata, sizeof(StationData)*i, sizeof(StationData));
+	}
+	
+	attribs_load(); // load and repackage attrib bits (for backward compatibility)
+	
+	// 3. write non-volatile controller status
+	nvdata.reboot_cause = REBOOT_CAUSE_RESET;
+	nvdata_save();
+	last_reboot_cause = nvdata.reboot_cause;
+	
+	// 4. write program data: just need to write a program counter: 0
+	file_write_byte(PROG_FILENAME, 0, 0);
+	
+	// 5. write 'done' file
+	file_write_byte(DONE_FILENAME, 0, 1);
+}
+
 /** Setup function for options */
 void OpenSprinkler::options_setup() {
 
 	// Check reset conditions:
 	if (file_read_byte(IOPTS_FILENAME, IOPT_FW_VERSION)<219 ||	// fw version is invalid (<219)
-			!file_exists(DONE_FILENAME) ||													// done file doesn't exist
-			file_read_byte(IOPTS_FILENAME, IOPT_RESET)==0xAA)  {	 // reset flag is on
+			!file_exists(DONE_FILENAME)) {													// done file doesn't exist
 
-#if defined(ARDUINO)
-		lcd_print_line_clear_pgm(PSTR("Resetting..."), 0);
-		lcd_print_line_clear_pgm(PSTR("Please Wait..."), 1);
-#else
-		DEBUG_PRINT("resetting options...");
-#endif		
+		factory_reset();
 
-		// 0. remove existing files
-		if(file_read_byte(IOPTS_FILENAME, IOPT_RESET)==0xAA) {
-			// this is an explicit reset request, simply perform a format
-			#if defined(ESP8266)
-			SPIFFS.format();
-			#else
-			// todo future: delete log files
-			#endif
-		}
-
-		remove_file(DONE_FILENAME);
-		/*remove_file(IOPTS_FILENAME);
-		remove_file(SOPTS_FILENAME);
-		remove_file(STATIONS_FILENAME);
-		remove_file(NVCON_FILENAME);
-		remove_file(PROG_FILENAME);*/
-
-		// 1. write all options
-		iopts_save();
-		// wipe out sopts file first
-		memset(tmp_buffer, 0, MAX_SOPTS_SIZE);
-		for(int i=0; i<NUM_SOPTS; i++) {
-			file_write_block(SOPTS_FILENAME, tmp_buffer, (ulong)MAX_SOPTS_SIZE*i, MAX_SOPTS_SIZE);
-		}
-		// write string options 
-		for(int i=0; i<NUM_SOPTS; i++) {
-			sopt_save(i, sopts[i]);
-		}
-		
-		// 2. write station data
-		StationData *pdata=(StationData*)tmp_buffer;
-		pdata->name[0]='S';
-		pdata->name[3]=0;
-		pdata->name[4]=0;
-		StationAttrib at;
-		memset(&at, 0, sizeof(StationAttrib));
-		at.mas=1;
-		at.seq=1;
-		pdata->attrib=at; // mas:1 seq:1
-		pdata->type=STN_TYPE_STANDARD;
-		pdata->sped[0]='0';
-		pdata->sped[1]=0;
-		for(int i=0; i<MAX_NUM_STATIONS; i++) {
-			int sid=i+1;
-			if(i<99) {
-				pdata->name[1]='0'+(sid/10); // default station name
-				pdata->name[2]='0'+(sid%10);
-			} else {
-				pdata->name[1]='0'+(sid/100);
-				pdata->name[2]='0'+((sid%100)/10);
-				pdata->name[3]='0'+(sid%10);
-			}
-			file_write_block(STATIONS_FILENAME, pdata, sizeof(StationData)*i, sizeof(StationData));
-		}
-		
-		attribs_load(); // load and repackage attrib bits (for backward compatibility)
-		
-		// 3. write non-volatile controller status
-		nvdata.reboot_cause = REBOOT_CAUSE_RESET;
-		nvdata_save();
-		last_reboot_cause = nvdata.reboot_cause;
-		
-		// 4. write program data: just need to write a program counter: 0
-		file_write_byte(PROG_FILENAME, 0, 0);
-		
-		// 5. write 'done' file
-		file_write_byte(DONE_FILENAME, 0, 1);
-		
 	} else	{
 
 		iopts_load();
@@ -1904,7 +1941,8 @@ void OpenSprinkler::options_setup() {
 		// if BUTTON_1 is pressed during startup, go to 'reset all options'
 		ui_set_options(IOPT_RESET);
 		if (iopts[IOPT_RESET]) {
-			reboot_dev(REBOOT_CAUSE_NONE);
+			pre_factory_reset();
+			reboot_dev(REBOOT_CAUSE_RESET);
 		}
 		break;
 
@@ -1945,7 +1983,8 @@ void OpenSprinkler::options_setup() {
 		lcd.clear();
 		ui_set_options(0);
 		if (iopts[IOPT_RESET]) {
-			reboot_dev(REBOOT_CAUSE_NONE);
+			pre_factory_reset();
+			reboot_dev(REBOOT_CAUSE_RESET);
 		}
 		break;
 	}
@@ -2363,68 +2402,40 @@ void OpenSprinkler::lcd_print_option(int i) {
 	
 }
 
-void OpenSprinkler::yield_nicely() {
-	if(m_server) Ethernet.tick();
-#if defined(ESP8266)
-	delay(0);
-#endif	
-}
-
-/** A delay function that does not stall Ethernet or WiFi */
-void OpenSprinkler::delay_nicely(uint32_t ms) {
-	uint32_t start = millis();
-	do {
-		//yield_nicely();
-		delay(1);
-	} while(millis()-start < ms);
-}
-
 /** Button functions */
 /** wait for button */
 byte OpenSprinkler::button_read_busy(byte pin_butt, byte waitmode, byte butt, byte is_holding) {
 
 	int hold_time = 0;
 
-  if (pin_butt==PIN_BUTTON_2) {
-    if (waitmode==BUTTON_WAIT_NONE || (waitmode == BUTTON_WAIT_HOLD && is_holding)) {
-      if (digitalReadExt(pin_butt) != 1) return BUTTON_NONE;
-      return butt | (is_holding ? BUTTON_FLAG_HOLD : 0);
-    }
-  } else {
-    if (waitmode==BUTTON_WAIT_NONE || (waitmode == BUTTON_WAIT_HOLD && is_holding)) {
-      if (digitalReadExt(pin_butt) != 0) return BUTTON_NONE;
-      return butt | (is_holding ? BUTTON_FLAG_HOLD : 0);
-    }    
-  }
-  if (pin_butt==PIN_BUTTON_2) {  
-	  while (digitalReadExt(pin_butt) == 1 &&
-	  			 (waitmode == BUTTON_WAIT_RELEASE || (waitmode == BUTTON_WAIT_HOLD && hold_time<BUTTON_HOLD_MS))) {
-	  	delay_nicely(BUTTON_DELAY_MS);
-	  	hold_time += BUTTON_DELAY_MS;
-	  }
-  } else {
-    while (digitalReadExt(pin_butt) == 0 &&
-           (waitmode == BUTTON_WAIT_RELEASE || (waitmode == BUTTON_WAIT_HOLD && hold_time<BUTTON_HOLD_MS))) {
-      delay_nicely(BUTTON_DELAY_MS);
-      hold_time += BUTTON_DELAY_MS;      
-	  }
-  }
+	if (waitmode==BUTTON_WAIT_NONE || (waitmode == BUTTON_WAIT_HOLD && is_holding)) {
+		if (digitalReadExt(pin_butt) != 0) return BUTTON_NONE;
+		return butt | (is_holding ? BUTTON_FLAG_HOLD : 0);
+	}
+
+	while (digitalReadExt(pin_butt) == 0 &&
+				 (waitmode == BUTTON_WAIT_RELEASE || (waitmode == BUTTON_WAIT_HOLD && hold_time<BUTTON_HOLD_MS))) {
+		delay(BUTTON_DELAY_MS);
+		hold_time += BUTTON_DELAY_MS;
+	}
 	if (is_holding || hold_time >= BUTTON_HOLD_MS)
 		butt |= BUTTON_FLAG_HOLD;
 	return butt;
+
 }
+
 /** read button and returns button value 'OR'ed with flag bits */
-byte OpenSprinkler::button_read(byte waitmode) 
+byte OpenSprinkler::button_read(byte waitmode)
 {
 	static byte old = BUTTON_NONE;
 	byte curr = BUTTON_NONE;
 	byte is_holding = (old&BUTTON_FLAG_HOLD);
 
-	delay_nicely(BUTTON_DELAY_MS);
+	delay(BUTTON_DELAY_MS);
 
 	if (digitalReadExt(PIN_BUTTON_1) == 0) {
 		curr = button_read_busy(PIN_BUTTON_1, waitmode, BUTTON_1, is_holding);
-	} else if (digitalReadExt(PIN_BUTTON_2) == 1) {
+	} else if (digitalReadExt(PIN_BUTTON_2) == 0) {
 		curr = button_read_busy(PIN_BUTTON_2, waitmode, BUTTON_2, is_holding);
 	} else if (digitalReadExt(PIN_BUTTON_3) == 0) {
 		curr = button_read_busy(PIN_BUTTON_3, waitmode, BUTTON_3, is_holding);
@@ -2472,10 +2483,6 @@ void OpenSprinkler::ui_set_options(int oid)
 		case BUTTON_3:
 			if (!(button & BUTTON_FLAG_DOWN)) break;
 			if (button & BUTTON_FLAG_HOLD) {
-				// if IOPT_RESET is set to nonzero, change it to reset condition value
-				if (iopts[IOPT_RESET]) {
-					iopts[IOPT_RESET] = 0xAA;
-				}
 				// long press, save options
 				iopts_save();
 				finished = true;
