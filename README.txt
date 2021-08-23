@@ -18,7 +18,7 @@ Model: ESP8266-WIFI-4-Channels-Relay-Module-AC-DC-ESP-12F-Development-Board
 
 Probably the cheapest board on which you will be able to mount OpenSprinkler
 
-The lines referring to the RTC module have been commented, since they produced time imbalances by not having said module and files "I2CRTC.cpp" and "I2CRTC.h" deleted.
+The lines on the RTC module have been recovered. Now with update 2.1.9 (9) It is only updated if the module exists.
 
 The sensors have been nested to the GPIO1 and GPIO3 ports. They have only been tested in button quality.
 

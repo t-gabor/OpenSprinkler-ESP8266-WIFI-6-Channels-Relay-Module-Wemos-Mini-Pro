@@ -1088,109 +1088,120 @@ void OpenSprinkler::latch_apply_all_station_bits() {
 }
 #endif
 
+/** Desde aquí se elimina para dar paso a los pines GPIO de la placa ESP8266 WIFI 4 Channels Relay Module AC/DC ESP-12F Development Board que son los pines GPIO16 (D0)GPIO14 (D5)GPIO12 (D6)GPIO13 (D7)*/
 /** Apply all station bits
  * !!! This will activate/deactivate valves !!!
  */
-void OpenSprinkler::apply_all_station_bits() {
+// void OpenSprinkler::apply_all_station_bits() {
 
-#if defined(ESP8266)
-	if(hw_type==HW_TYPE_LATCH) {
-		// if controller type is latching, the control mechanism is different
-		// hence will be handled separately
-		latch_apply_all_station_bits(); 
-	} else {
-		// Handle DC booster
-		if(hw_type==HW_TYPE_DC && engage_booster) {
-			// for DC controller: boost voltage and enable output path
-			digitalWriteExt(PIN_BOOST_EN, LOW);  // disfable output path
-			digitalWriteExt(PIN_BOOST, HIGH);		 // enable boost converter
-			delay((int)iopts[IOPT_BOOST_TIME]<<2);	// wait for booster to charge
-			digitalWriteExt(PIN_BOOST, LOW);		 // disable boost converter
-			digitalWriteExt(PIN_BOOST_EN, HIGH); // enable output path
-			engage_booster = 0;
-		}
+// #if defined(ESP8266)
+	// if(hw_type==HW_TYPE_LATCH) {
+		// // if controller type is latching, the control mechanism is different
+		// // hence will be handled separately
+		// latch_apply_all_station_bits(); 
+	// } else {
+		// // Handle DC booster
+		// if(hw_type==HW_TYPE_DC && engage_booster) {
+			// // for DC controller: boost voltage and enable output path
+			// digitalWriteExt(PIN_BOOST_EN, LOW);  // disfable output path
+			// digitalWriteExt(PIN_BOOST, HIGH);		 // enable boost converter
+			// delay((int)iopts[IOPT_BOOST_TIME]<<2);	// wait for booster to charge
+			// digitalWriteExt(PIN_BOOST, LOW);		 // disable boost converter
+			// digitalWriteExt(PIN_BOOST_EN, HIGH); // enable output path
+			// engage_booster = 0;
+		// }
 
-		// Handle driver board (on main controller)
-		if(drio->type==IOEXP_TYPE_8574) {
-			/* revision 0 uses PCF8574 with active low logic, so all bits must be flipped */
-			drio->i2c_write(NXP_OUTPUT_REG, ~station_bits[0]);
-		} else if(drio->type==IOEXP_TYPE_9555) {
-			/* revision 1 uses PCA9555 with active high logic */
-			uint16_t reg = drio->i2c_read(NXP_OUTPUT_REG);	// read current output reg value
-			reg = (reg&0xFF00) | station_bits[0]; // output channels are the low 8-bit
-			drio->i2c_write(NXP_OUTPUT_REG, reg); // write value to register
-		}
+		// // Handle driver board (on main controller)
+		// if(drio->type==IOEXP_TYPE_8574) {
+			// /* revision 0 uses PCF8574 with active low logic, so all bits must be flipped */
+			// drio->i2c_write(NXP_OUTPUT_REG, ~station_bits[0]);
+		// } else if(drio->type==IOEXP_TYPE_9555) {
+			// /* revision 1 uses PCA9555 with active high logic */
+			// uint16_t reg = drio->i2c_read(NXP_OUTPUT_REG);	// read current output reg value
+			// reg = (reg&0xFF00) | station_bits[0]; // output channels are the low 8-bit
+			// drio->i2c_write(NXP_OUTPUT_REG, reg); // write value to register
+		// }
 			
-		// Handle expansion boards
-		for(int i=0;i<MAX_EXT_BOARDS/2;i++) {
-			uint16_t data = station_bits[i*2+2];
-			data = (data<<8) + station_bits[i*2+1];
-			if(expanders[i]->type==IOEXP_TYPE_9555) {
-				expanders[i]->i2c_write(NXP_OUTPUT_REG, data);
-			} else {
-				expanders[i]->i2c_write(NXP_OUTPUT_REG, ~data);
-			}
-		}
-	}
+		// // Handle expansion boards
+		// for(int i=0;i<MAX_EXT_BOARDS/2;i++) {
+			// uint16_t data = station_bits[i*2+2];
+			// data = (data<<8) + station_bits[i*2+1];
+			// if(expanders[i]->type==IOEXP_TYPE_9555) {
+				// expanders[i]->i2c_write(NXP_OUTPUT_REG, data);
+			// } else {
+				// expanders[i]->i2c_write(NXP_OUTPUT_REG, ~data);
+			// }
+		// }
+	// }
 		
-	byte bid, s, sbits;  
-#else
-	digitalWrite(PIN_SR_LATCH, LOW);
-	byte bid, s, sbits;
+	// byte bid, s, sbits;  
+// #else
+	// digitalWrite(PIN_SR_LATCH, LOW);
+	// byte bid, s, sbits;
 
-	// Shift out all station bit values
-	// from the highest bit to the lowest
-	for(bid=0;bid<=MAX_EXT_BOARDS;bid++) {
-		if (status.enabled)
-			sbits = station_bits[MAX_EXT_BOARDS-bid];
-		else
-			sbits = 0;
+	// // Shift out all station bit values
+	// // from the highest bit to the lowest
+	// for(bid=0;bid<=MAX_EXT_BOARDS;bid++) {
+		// if (status.enabled)
+			// sbits = station_bits[MAX_EXT_BOARDS-bid];
+		// else
+			// sbits = 0;
 
-		for(s=0;s<8;s++) {
-			digitalWrite(PIN_SR_CLOCK, LOW);
-	#if defined(OSPI) // if OSPI, use dynamically assigned pin_sr_data
-			digitalWrite(pin_sr_data, (sbits & ((byte)1<<(7-s))) ? HIGH : LOW );
-	#else
-			digitalWrite(PIN_SR_DATA, (sbits & ((byte)1<<(7-s))) ? HIGH : LOW );
-	#endif
-			digitalWrite(PIN_SR_CLOCK, HIGH);
-		}
-	}
+		// for(s=0;s<8;s++) {
+			// digitalWrite(PIN_SR_CLOCK, LOW);
+	// #if defined(OSPI) // if OSPI, use dynamically assigned pin_sr_data
+			// digitalWrite(pin_sr_data, (sbits & ((byte)1<<(7-s))) ? HIGH : LOW );
+	// #else
+			// digitalWrite(PIN_SR_DATA, (sbits & ((byte)1<<(7-s))) ? HIGH : LOW );
+	// #endif
+			// digitalWrite(PIN_SR_CLOCK, HIGH);
+		// }
+	// }
 
-	#if defined(ARDUINO)
-	if((hw_type==HW_TYPE_DC) && engage_booster) {
-		// for DC controller: boost voltage
-		digitalWrite(PIN_BOOST_EN, LOW);	// disable output path
-		digitalWrite(PIN_BOOST, HIGH);		// enable boost converter
-		delay((int)iopts[IOPT_BOOST_TIME]<<2);	// wait for booster to charge
-		digitalWrite(PIN_BOOST, LOW);			// disable boost converter
+	// #if defined(ARDUINO)
+	// if((hw_type==HW_TYPE_DC) && engage_booster) {
+		// // for DC controller: boost voltage
+		// digitalWrite(PIN_BOOST_EN, LOW);	// disable output path
+		// digitalWrite(PIN_BOOST, HIGH);		// enable boost converter
+		// delay((int)iopts[IOPT_BOOST_TIME]<<2);	// wait for booster to charge
+		// digitalWrite(PIN_BOOST, LOW);			// disable boost converter
 
-		digitalWrite(PIN_BOOST_EN, HIGH); // enable output path
-		digitalWrite(PIN_SR_LATCH, HIGH);
-		engage_booster = 0;
-	} else {
-		digitalWrite(PIN_SR_LATCH, HIGH);
-	}
-	#else
-	digitalWrite(PIN_SR_LATCH, HIGH);
-	#endif
-#endif
+		// digitalWrite(PIN_BOOST_EN, HIGH); // enable output path
+		// digitalWrite(PIN_SR_LATCH, HIGH);
+		// engage_booster = 0;
+	// } else {
+		// digitalWrite(PIN_SR_LATCH, HIGH);
+	// }
+	// #else
+	// digitalWrite(PIN_SR_LATCH, HIGH);
+	// #endif
+// #endif
 
 
-	if(iopts[IOPT_SPE_AUTO_REFRESH]) {
-		// handle refresh of RF and remote stations
-		// we refresh the station that's next in line
-		static byte next_sid_to_refresh = MAX_NUM_STATIONS>>1;
-		static byte lastnow = 0;
-		byte _now = (now() & 0xFF);
-		if (lastnow != _now) {	// perform this no more than once per second
-			lastnow = _now;
-			next_sid_to_refresh = (next_sid_to_refresh+1) % MAX_NUM_STATIONS;
-			bid=next_sid_to_refresh>>3;
-			s=next_sid_to_refresh&0x07;
-			switch_special_station(next_sid_to_refresh, (station_bits[bid]>>s)&0x01);
-		}
-	}
+	// if(iopts[IOPT_SPE_AUTO_REFRESH]) {
+		// // handle refresh of RF and remote stations
+		// // we refresh the station that's next in line
+		// static byte next_sid_to_refresh = MAX_NUM_STATIONS>>1;
+		// static byte lastnow = 0;
+		// byte _now = (now() & 0xFF);
+		// if (lastnow != _now) {	// perform this no more than once per second
+			// lastnow = _now;
+			// next_sid_to_refresh = (next_sid_to_refresh+1) % MAX_NUM_STATIONS;
+			// bid=next_sid_to_refresh>>3;
+			// s=next_sid_to_refresh&0x07;
+			// switch_special_station(next_sid_to_refresh, (station_bits[bid]>>s)&0x01);
+		// }
+	// }
+// }
+
+/**Modificación ESP8266 WIFI 4 Channels Relay Module AC/DC ESP-12F Development Board”.*/
+
+void OpenSprinkler::apply_all_station_bits() {
+  const uint8_t stationGPIO[] = {16, 14, 12, 13};
+  for (uint8_t i = 0; i < 4; i++) {
+    pinMode(stationGPIO[i], OUTPUT);
+    digitalWrite(stationGPIO[i], station_bits[0] & 1 << i ? HIGH : LOW);
+  }
 }
 
 /** Read rain sensor status */
@@ -2408,15 +2419,29 @@ byte OpenSprinkler::button_read_busy(byte pin_butt, byte waitmode, byte butt, by
 
 	int hold_time = 0;
 
-	if (waitmode==BUTTON_WAIT_NONE || (waitmode == BUTTON_WAIT_HOLD && is_holding)) {
-		if (digitalReadExt(pin_butt) != 0) return BUTTON_NONE;
-		return butt | (is_holding ? BUTTON_FLAG_HOLD : 0);
+	if (pin_butt==PIN_BUTTON_2) {
+    		if (waitmode==BUTTON_WAIT_NONE || (waitmode == BUTTON_WAIT_HOLD && is_holding)) {
+			if (digitalReadExt(pin_butt) != 1) return BUTTON_NONE;
+			return butt | (is_holding ? BUTTON_FLAG_HOLD : 0);
+		}
+	} else {
+		if (waitmode==BUTTON_WAIT_NONE || (waitmode == BUTTON_WAIT_HOLD && is_holding)) {
+			if (digitalReadExt(pin_butt) != 0) return BUTTON_NONE;
+			return butt | (is_holding ? BUTTON_FLAG_HOLD : 0);
+		}    
 	}
-
-	while (digitalReadExt(pin_butt) == 0 &&
-				 (waitmode == BUTTON_WAIT_RELEASE || (waitmode == BUTTON_WAIT_HOLD && hold_time<BUTTON_HOLD_MS))) {
-		delay(BUTTON_DELAY_MS);
-		hold_time += BUTTON_DELAY_MS;
+	if (pin_butt==PIN_BUTTON_2) {  
+		while (digitalReadExt(pin_butt) == 1 &&
+		       			(waitmode == BUTTON_WAIT_RELEASE || (waitmode == BUTTON_WAIT_HOLD && hold_time<BUTTON_HOLD_MS))) {
+			delay(BUTTON_DELAY_MS);
+			hold_time += BUTTON_DELAY_MS;
+		}
+	} else {
+		while (digitalReadExt(pin_butt) == 0 &&
+		       (waitmode == BUTTON_WAIT_RELEASE || (waitmode == BUTTON_WAIT_HOLD && hold_time<BUTTON_HOLD_MS))) {
+			delay(BUTTON_DELAY_MS);
+			hold_time += BUTTON_DELAY_MS;
+		}
 	}
 	if (is_holding || hold_time >= BUTTON_HOLD_MS)
 		butt |= BUTTON_FLAG_HOLD;
@@ -2435,7 +2460,7 @@ byte OpenSprinkler::button_read(byte waitmode)
 
 	if (digitalReadExt(PIN_BUTTON_1) == 0) {
 		curr = button_read_busy(PIN_BUTTON_1, waitmode, BUTTON_1, is_holding);
-	} else if (digitalReadExt(PIN_BUTTON_2) == 0) {
+	} else if (digitalReadExt(PIN_BUTTON_2) == 1) {
 		curr = button_read_busy(PIN_BUTTON_2, waitmode, BUTTON_2, is_holding);
 	} else if (digitalReadExt(PIN_BUTTON_3) == 0) {
 		curr = button_read_busy(PIN_BUTTON_3, waitmode, BUTTON_3, is_holding);
