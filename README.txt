@@ -34,6 +34,8 @@ I have tested an SSD1306 oled screen connected to the pins of the board and it w
   gpio15 ___.-.___ 3,3v              b2 (button 2) "INPUT_PULLDOWN"
   gpio0  ___.-.___ g                 b3 (button 3) "INPUT_PULLUP"
 
+Changed SSD1306Display.h "Wire.setClock(100000L)" due to incompatibility with RTC DS1306
+
 I haven't tested with sensors and other components. 
 
 Suggestions are welcome
