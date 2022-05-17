@@ -11,39 +11,17 @@ For OSPi/OSBO or other Linux-based OpenSprinkler:
 https://openthings.freshdesk.com/support/solutions/articles/5000631599-installing-and-updating-the-unified-firmware
 
 --------------------------------------------
+Used a Wemos D1 Mini Pro, similar boards should also work. Relays are controlled directtly by GPIO pins.
 
-This modification with respect to the original is capable of controlling the relays included in the board
+Relay pins:
+GPIO6  - D0
+GPIO14 - D5
+GPIO12 - D6
+GPIO13 - D7
+GPIO15 - D8
+GPIO0  - D3
 
-Model: ESP8266-WIFI-4-Channels-Relay-Module-AC-DC-ESP-12F-Development-Board
+Sensor:
+GPIO3(RX) - 
 
-Probably the cheapest board on which you will be able to mount OpenSprinkler
 
-The lines on the RTC module have been recovered. Now with update 2.1.9 (9) It is only updated if the module exists.
-
-The sensors have been nested to the GPIO1 and GPIO3 ports. They have only been tested in button quality.
-
-I have tested an SSD1306 oled screen connected to the pins of the board and it works correctly
-  
-  3,3v   -> vcc
-  g      -> gnd
-  gpio5  -> scl
-  gpio4  -> sda
-  gpio1  ___.-.___ g                 Sensor 1
-  gpio3  ___.-.___ g                 Sensor 2
-  gpio2  ___.-.___ g                 b1 (button 1) "INPUT_PULLUP"
-  gpio15 ___.-.___ 3,3v              b2 (button 2) "INPUT_PULLDOWN"
-  gpio0  ___.-.___ g                 b3 (button 3) "INPUT_PULLUP"
-
-Changed SSD1306Display.h "Wire.setClock(100000L)" due to incompatibility with RTC DS1306
-
-I haven't tested with sensors and other components. 
-
-Suggestions are welcome
-
-Credits: Thanks to the forum user Tobasco
-https://opensprinkler.com/forums/topic/change-firmware-to-control-stations-directly-via-gpio-pins-relays/
-
-============================================
-Questions and comments:
-http://www.opensprinkler.com
-============================================
