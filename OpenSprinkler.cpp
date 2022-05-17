@@ -677,100 +677,16 @@ void OpenSprinkler::begin() {
 	Wire.begin(); // init I2C
 #endif
 
-	hw_type = HW_TYPE_UNKNOWN;
+	hw_type = HW_TYPE_AC;
 	hw_rev = 0;
 		
 #if defined(ESP8266)
 
-	/* check hardware type */
-	if(detect_i2c(ACDR_I2CADDR)) hw_type = HW_TYPE_AC;
-	else if(detect_i2c(DCDR_I2CADDR)) hw_type = HW_TYPE_DC;
-	else if(detect_i2c(LADR_I2CADDR)) hw_type = HW_TYPE_LATCH;
-	
-	/* detect hardware revision type */
-	if(detect_i2c(MAIN_I2CADDR)) {	// check if main PCF8574 exists
-		/* assign revision 0 pins */
-		PIN_BUTTON_1 = V0_PIN_BUTTON_1;
-		PIN_BUTTON_2 = V0_PIN_BUTTON_2;
-		PIN_BUTTON_3 = V0_PIN_BUTTON_3;
-		PIN_RFRX = V0_PIN_RFRX;
-		PIN_RFTX = V0_PIN_RFTX;
-		PIN_BOOST = V0_PIN_BOOST;
-		PIN_BOOST_EN = V0_PIN_BOOST_EN;
-		PIN_SENSOR1 = V0_PIN_SENSOR1;
-		PIN_SENSOR2 = V0_PIN_SENSOR2;
-		
-		// on revision 0, main IOEXP and driver IOEXP are two separate PCF8574 chips
-		if(hw_type==HW_TYPE_DC) {
-			drio = new PCF8574(DCDR_I2CADDR);
-		} else if(hw_type==HW_TYPE_LATCH) {
-			drio = new PCF8574(LADR_I2CADDR);
-		} else {
-			drio = new PCF8574(ACDR_I2CADDR);
-		}
+	drio = new PCA9555(ACDR_I2CADDR);
+	mainio = drio;
 
-		mainio = new PCF8574(MAIN_I2CADDR);
-		mainio->i2c_write(0, 0x0F); // set lower four bits of main PCF8574 (8-ch) to high
-		
-		digitalWriteExt(V0_PIN_PWR_TX, 1); // turn on TX power
-		digitalWriteExt(V0_PIN_PWR_RX, 1); // turn on RX power
-		pinModeExt(PIN_BUTTON_2, INPUT_PULLUP);
-		digitalWriteExt(PIN_BOOST, LOW);
-		digitalWriteExt(PIN_BOOST_EN, LOW);
-		digitalWriteExt(PIN_LATCH_COM, LOW);
-		
-	} else {
-
-		if(hw_type==HW_TYPE_DC) {
-			drio = new PCA9555(DCDR_I2CADDR);
-		} else if(hw_type==HW_TYPE_LATCH) {
-			drio = new PCA9555(LADR_I2CADDR);
-		} else {
-			drio = new PCA9555(ACDR_I2CADDR);
-		}
-		mainio = drio;
-
-		pinMode(16, INPUT);
-		if(digitalRead(16)==LOW) {
-			// revision 1
-			hw_rev = 1;
-			mainio->i2c_write(NXP_CONFIG_REG, V1_IO_CONFIG);
-			mainio->i2c_write(NXP_OUTPUT_REG, V1_IO_OUTPUT);
-
-			PIN_BUTTON_1 = V1_PIN_BUTTON_1;
-			PIN_BUTTON_2 = V1_PIN_BUTTON_2;
-			PIN_BUTTON_3 = V1_PIN_BUTTON_3;
-			PIN_RFRX = V1_PIN_RFRX;
-			PIN_RFTX = V1_PIN_RFTX;
-			PIN_IOEXP_INT = V1_PIN_IOEXP_INT;
-			PIN_BOOST = V1_PIN_BOOST;
-			PIN_BOOST_EN = V1_PIN_BOOST_EN;
-			PIN_LATCH_COM = V1_PIN_LATCH_COM;
-			PIN_SENSOR1 = V1_PIN_SENSOR1;
-			PIN_SENSOR2 = V1_PIN_SENSOR2;
-		} else {
-			// revision 2
-			hw_rev = 2;
-			mainio->i2c_write(NXP_CONFIG_REG, V2_IO_CONFIG);
-			mainio->i2c_write(NXP_OUTPUT_REG, V2_IO_OUTPUT);
-			
-			PIN_BUTTON_1 = V2_PIN_BUTTON_1;
-			PIN_BUTTON_2 = V2_PIN_BUTTON_2;
-			PIN_BUTTON_3 = V2_PIN_BUTTON_3;
-			PIN_RFTX = V2_PIN_RFTX;
-			PIN_BOOST = V2_PIN_BOOST;
-			PIN_BOOST_EN = V2_PIN_BOOST_EN;
-			PIN_LATCH_COMK = V2_PIN_LATCH_COMK; // os3.2latch uses H-bridge separate cathode and anode design
-			PIN_LATCH_COMA = V2_PIN_LATCH_COMA;
-			PIN_SENSOR1 = V2_PIN_SENSOR1;
-			PIN_SENSOR2 = V2_PIN_SENSOR2;
-		}		 
-	}
-	
-	/* detect expanders */
-	for(byte i=0;i<(MAX_NUM_BOARDS)/2;i++)
-		expanders[i] = NULL;
-	detect_expanders();
+	hw_rev = 1;
+	PIN_SENSOR1 = 3; // GPIO3, RX pin
 
 #else
 
@@ -917,12 +833,6 @@ void OpenSprinkler::begin() {
 		}
 		
 	#endif
-		
-	// set button pins
-	// enable internal pullup
-	pinMode(PIN_BUTTON_1, INPUT_PULLUP);
-	pinMode(PIN_BUTTON_2, INPUT_PULLUP);
-	pinMode(PIN_BUTTON_3, INPUT_PULLUP);
 	
 	// detect and check RTC type
 	RTC.detect();
@@ -2346,30 +2256,7 @@ byte OpenSprinkler::button_read_busy(byte pin_butt, byte waitmode, byte butt, by
 /** read button and returns button value 'OR'ed with flag bits */
 byte OpenSprinkler::button_read(byte waitmode)
 {
-	static byte old = BUTTON_NONE;
-	byte curr = BUTTON_NONE;
-	byte is_holding = (old&BUTTON_FLAG_HOLD);
-
-	delay(BUTTON_DELAY_MS);
-
-	if (digitalReadExt(PIN_BUTTON_1) == 0) {
-		curr = button_read_busy(PIN_BUTTON_1, waitmode, BUTTON_1, is_holding);
-	} else if (digitalReadExt(PIN_BUTTON_2) == 1) {
-		curr = button_read_busy(PIN_BUTTON_2, waitmode, BUTTON_2, is_holding);
-	} else if (digitalReadExt(PIN_BUTTON_3) == 0) {
-		curr = button_read_busy(PIN_BUTTON_3, waitmode, BUTTON_3, is_holding);
-	}
-
-	// set flags in return value
-	byte ret = curr;
-	if (!(old&BUTTON_MASK) && (curr&BUTTON_MASK))
-		ret |= BUTTON_FLAG_DOWN;
-	if ((old&BUTTON_MASK) && !(curr&BUTTON_MASK))
-		ret |= BUTTON_FLAG_UP;
-
-	old = curr;
-	
-	return ret;
+	return 0; // No pins remaining for buttons.
 }
 
 /** user interface for setting options during startup */
