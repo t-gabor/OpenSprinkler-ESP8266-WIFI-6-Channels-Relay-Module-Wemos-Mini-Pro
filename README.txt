@@ -11,7 +11,8 @@ For OSPi/OSBO or other Linux-based OpenSprinkler:
 https://openthings.freshdesk.com/support/solutions/articles/5000631599-installing-and-updating-the-unified-firmware
 
 --------------------------------------------
-Used a Wemos D1 Mini Pro, similar boards should also work. Relays are controlled directly by GPIO pins.
+Used a Wemos D1 Mini Pro, similar boards should also work. Relays are controlled directly by GPIO pins. The pins are
+set to HIGH when the station is active.
 
 Relay pins:
 GPIO6  - D0
