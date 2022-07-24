@@ -1778,6 +1778,20 @@ void perform_ntp_sync() {
 	// do not perform ntp if network is not connected
 	if (!os.network_connected()) return;
 
+	// keep trying ntp if we are in the past every 1 minute
+	ulong curr_time = os.now_tz();
+	if(curr_time < 1577836800UL) {		
+		os.status.req_ntpsync = 1;
+		
+		static int forced_update_counter = 0;			
+		if(forced_update_counter < 60) {
+			forced_update_counter++;
+			return;
+		}
+
+		forced_update_counter = 0;		
+	}
+
 	if (os.status.req_ntpsync) {
 		os.status.req_ntpsync = 0;
 		if (!ui_state) {
